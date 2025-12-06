@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, ne, notInArray } from "drizzle-orm";
 
@@ -5,8 +6,9 @@ import { db } from "@/db/client";
 import { profiles, swipes } from "@/db/schema";
 
 export async function GET(request: NextRequest) {
+  await connection();
   try {
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const currentUserId = searchParams.get("userId");
     const limit = parseInt(searchParams.get("limit") || "10");
 
