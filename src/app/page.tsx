@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 
 export default function HomePage() {
   return (
-    <main className="flex flex-col items-center justify-center min-h-[70vh] text-center px-4">
+    <main className="flex flex-col items-center justify-center min-h-screen text-center px-4">
       <div className="space-y-6 max-w-2xl">
         <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">
           Conecta con gente innovadora

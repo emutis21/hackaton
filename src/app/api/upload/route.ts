@@ -7,29 +7,74 @@ import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
 import { config } from "@/lib/config";
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    // AI SDK errors
+    if (error.name === "AI_NoObjectGeneratedError") {
+      return "No pudimos extraer la información del CV. Intenta con otro archivo.";
+    }
+    if (error.message.includes("Insufficient Balance")) {
+      return "Servicio de AI temporalmente no disponible. Intenta más tarde.";
+    }
+    if (error.message.includes("rate limit")) {
+      return "Demasiadas solicitudes. Espera un momento e intenta de nuevo.";
+    }
+    // DB errors
+    if (error.message.includes("duplicate key")) {
+      return "Ya existe un perfil con este email.";
+    }
+    if (error.message.includes("connection")) {
+      return "Error de conexión a la base de datos. Intenta de nuevo.";
+    }
+    return error.message;
+  }
+  return "Error desconocido al procesar el CV";
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
 
     if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      return NextResponse.json({ error: "No se proporcionó archivo" }, { status: 400 });
     }
 
     if (file.type !== "application/pdf") {
-      return NextResponse.json({ error: "File must be a PDF" }, { status: 400 });
+      return NextResponse.json({ error: "El archivo debe ser PDF" }, { status: 400 });
     }
 
     // 1. Extract text from PDF
     const buffer = await file.arrayBuffer();
-    const cvText = await extractTextFromPdf(buffer);
+    let cvText: string;
+    try {
+      cvText = await extractTextFromPdf(buffer);
+    } catch (pdfError) {
+      console.error("PDF extraction error:", pdfError);
+      return NextResponse.json(
+        { error: "No se pudo leer el PDF. Verifica que no esté protegido." },
+        { status: 400 }
+      );
+    }
 
     if (!cvText || cvText.trim().length < 50) {
-      return NextResponse.json({ error: "Could not extract text from PDF" }, { status: 400 });
+      return NextResponse.json(
+        { error: "El PDF no contiene suficiente texto. Usa un CV con más contenido." },
+        { status: 400 }
+      );
     }
 
     // 2. Extract profile data using AI
-    const extractedData = await extractProfileFromText(cvText);
+    let extractedData;
+    try {
+      extractedData = await extractProfileFromText(cvText);
+    } catch (aiError) {
+      console.error("AI extraction error:", aiError);
+      return NextResponse.json(
+        { error: getErrorMessage(aiError) },
+        { status: 422 }
+      );
+    }
 
     // 3. Upload PDF to Supabase Storage (if service role key is configured)
     let pdfUrl: string | null = null;
@@ -84,7 +129,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(
-      { error: "Failed to process CV" },
+      { error: getErrorMessage(error) },
       { status: 500 }
     );
   }
