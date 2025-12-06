@@ -9,9 +9,9 @@ export const extractedProfileSchema = z.object({
   experienceYears: z.number().describe("Total years of professional experience"),
   industry: z.string().describe("Primary industry or sector"),
   bio: z.string().describe("A compelling 2-3 sentence professional bio highlighting their unique value"),
-  linkedinUrl: z.string().optional().describe("LinkedIn profile URL if found"),
-  githubUrl: z.string().optional().describe("GitHub profile URL if found"),
-  email: z.string().optional().describe("Email address if found"),
+  linkedinUrl: z.string().nullish().describe("LinkedIn profile URL if found"),
+  githubUrl: z.string().nullish().describe("GitHub profile URL if found"),
+  email: z.string().nullish().describe("Email address if found"),
 });
 
 export type ExtractedProfile = z.infer<typeof extractedProfileSchema>;
