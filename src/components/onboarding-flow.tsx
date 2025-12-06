@@ -5,17 +5,20 @@ import { useRouter } from "next/navigation";
 
 import { PdfUpload } from "@/components/pdf-upload";
 import { OnboardingQuestions } from "@/components/onboarding-questions";
+import { useSession } from "@/hooks/use-session";
 import type { Profile } from "@/db/schema";
 
 type Step = "upload" | "questions";
 
 export function OnboardingFlow() {
   const router = useRouter();
+  const { setUserId } = useSession();
   const [step, setStep] = useState<Step>("upload");
   const [profile, setProfile] = useState<Profile | null>(null);
 
   const handleUploadSuccess = (uploadedProfile: Profile) => {
     setProfile(uploadedProfile);
+    setUserId(uploadedProfile.id);
     setStep("questions");
   };
 
@@ -37,7 +40,7 @@ export function OnboardingFlow() {
       });
 
       if (response.ok) {
-        router.push(`/discover?userId=${profile.id}`);
+        router.push("/discover");
       }
     } catch (error) {
       console.error("Error updating profile:", error);

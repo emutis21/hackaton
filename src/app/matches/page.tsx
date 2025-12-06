@@ -1,14 +1,12 @@
-import { Suspense } from "react";
+"use client";
+
+import { useEffect, useState } from "react";
 import { Loader2, Users, Linkedin, Mail, ArrowLeft } from "lucide-react";
-import { eq, or } from "drizzle-orm";
 import Link from "next/link";
 
-import { config } from "@/lib/config";
-import { db } from "@/db/client";
-import { matches, profiles } from "@/db/schema";
+import { useSession } from "@/hooks/use-session";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { mockCurrentUser, getMatchesForUser } from "@/lib/mock-data";
 
 function LoadingFallback() {
   return (
@@ -33,28 +31,41 @@ function NoUserFallback() {
   );
 }
 
-interface MatchesPageProps {
-  searchParams: Promise<{ userId?: string }>;
+interface MatchProfile {
+  id: string;
+  name: string;
+  headline: string | null;
+  linkedinUrl: string | null;
+  email: string;
 }
 
 interface MatchWithProfile {
   matchId: string;
-  matchedAt: Date;
-  profile: {
-    id: string;
-    name: string;
-    headline: string | null;
-    linkedinUrl: string | null;
-    email: string;
-  } | undefined;
+  matchedAt: string;
+  profile: MatchProfile | undefined;
 }
 
-function MatchesList({ matchesWithProfiles, userId }: { matchesWithProfiles: MatchWithProfile[]; userId: string }) {
+function EmptyMatches() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+      <Users className="w-16 h-16 text-muted-foreground mb-4" />
+      <h1 className="text-2xl font-bold mb-2">Sin matches todavia</h1>
+      <p className="text-muted-foreground mb-6">
+        Sigue explorando perfiles para encontrar conexiones
+      </p>
+      <Button asChild>
+        <Link href="/discover">Descubrir perfiles</Link>
+      </Button>
+    </div>
+  );
+}
+
+function MatchesList({ matches }: { matches: MatchWithProfile[] }) {
   return (
     <div className="py-8">
       <div className="flex items-center gap-4 mb-8">
         <Button asChild variant="ghost" size="icon">
-          <Link href={`/discover?userId=${userId}`}>
+          <Link href="/discover">
             <ArrowLeft className="w-5 h-5" />
           </Link>
         </Button>
@@ -62,7 +73,7 @@ function MatchesList({ matchesWithProfiles, userId }: { matchesWithProfiles: Mat
       </div>
 
       <div className="grid gap-4">
-        {matchesWithProfiles.map(({ matchId, matchedAt, profile }) => {
+        {matches.map(({ matchId, matchedAt, profile }) => {
           if (!profile) return null;
 
           return (
@@ -113,105 +124,44 @@ function MatchesList({ matchesWithProfiles, userId }: { matchesWithProfiles: Mat
   );
 }
 
-async function MatchesLoader({
-  searchParams,
-}: {
-  searchParams: Promise<{ userId?: string }>;
-}) {
-  const { userId } = await searchParams;
+export default function MatchesPage() {
+  const { userId, isLoading: sessionLoading } = useSession();
+  const [matches, setMatches] = useState<MatchWithProfile[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Use mock data
-  if (config.useMockData) {
-    const effectiveUserId = userId || mockCurrentUser.id;
-    const userMatches = getMatchesForUser(effectiveUserId);
-
-    if (userMatches.length === 0) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-          <Users className="w-16 h-16 text-muted-foreground mb-4" />
-          <h1 className="text-2xl font-bold mb-2">Sin matches todavía</h1>
-          <p className="text-muted-foreground mb-6">
-            Sigue explorando perfiles para encontrar conexiones
-          </p>
-          <Button asChild>
-            <Link href={`/discover?userId=${effectiveUserId}`}>
-              Descubrir perfiles
-            </Link>
-          </Button>
-        </div>
-      );
+  useEffect(() => {
+    if (sessionLoading) return;
+    if (!userId) {
+      setIsLoading(false);
+      return;
     }
 
-    const matchesWithProfiles = userMatches.map((m) => ({
-      matchId: m.id,
-      matchedAt: m.createdAt,
-      profile: m.profile,
-    }));
+    async function fetchMatches() {
+      try {
+        const res = await fetch(`/api/matches?userId=${userId}`);
+        const data = await res.json();
+        setMatches(data.matches || []);
+      } catch (error) {
+        console.error("Error fetching matches:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
 
-    return (
-      <MatchesList matchesWithProfiles={matchesWithProfiles} userId={effectiveUserId} />
-    );
+    fetchMatches();
+  }, [userId, sessionLoading]);
+
+  if (sessionLoading || isLoading) {
+    return <LoadingFallback />;
   }
 
   if (!userId) {
     return <NoUserFallback />;
   }
 
-  // Get all matches where this user is either userA or userB
-  const userMatches = await db
-    .select({
-      matchId: matches.id,
-      matchedAt: matches.createdAt,
-      userAId: matches.userA,
-      userBId: matches.userB,
-    })
-    .from(matches)
-    .where(or(eq(matches.userA, userId), eq(matches.userB, userId)));
-
-  // Get the matched profile IDs (the other person in each match)
-  const matchedProfileIds = userMatches.map((m) =>
-    m.userAId === userId ? m.userBId : m.userAId
-  );
-
-  if (matchedProfileIds.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <Users className="w-16 h-16 text-muted-foreground mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Sin matches todavía</h1>
-        <p className="text-muted-foreground mb-6">
-          Sigue explorando perfiles para encontrar conexiones
-        </p>
-        <Button asChild>
-          <Link href={`/discover?userId=${userId}`}>Descubrir perfiles</Link>
-        </Button>
-      </div>
-    );
+  if (matches.length === 0) {
+    return <EmptyMatches />;
   }
 
-  // Fetch all matched profiles
-  const matchedProfiles = await db
-    .select()
-    .from(profiles)
-    .where(or(...matchedProfileIds.map((id) => eq(profiles.id, id))));
-
-  // Combine match data with profile data
-  const matchesWithProfiles = userMatches.map((m) => {
-    const matchedId = m.userAId === userId ? m.userBId : m.userAId;
-    const profile = matchedProfiles.find((p) => p.id === matchedId);
-    return {
-      matchId: m.matchId,
-      matchedAt: m.matchedAt,
-      profile,
-    };
-  });
-
-  return <MatchesList matchesWithProfiles={matchesWithProfiles} userId={userId} />;
-}
-
-export default function MatchesPage({ searchParams }: MatchesPageProps) {
-  return (
-    <Suspense fallback={<LoadingFallback />}>
-      <MatchesLoader searchParams={searchParams} />
-    </Suspense>
-  );
+  return <MatchesList matches={matches} />;
 }
