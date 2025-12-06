@@ -1,13 +1,13 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import { Suspense } from "react";
 import { Loader2 } from "lucide-react";
+import { and, eq, ne, notInArray } from "drizzle-orm";
 import Link from "next/link";
 
-import { useSession } from "@/hooks/use-session";
+import { getSessionUserId } from "@/lib/session";
+import { db } from "@/db/client";
+import { profiles, swipes } from "@/db/schema";
 import { DiscoverContent } from "@/components/discover-content";
 import { Button } from "@/components/ui/button";
-import type { Profile } from "@/db/schema";
 
 function LoadingFallback() {
   return (
@@ -32,40 +32,46 @@ function NoUserFallback() {
   );
 }
 
-export default function DiscoverPage() {
-  const { userId, isLoading: sessionLoading } = useSession();
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    if (sessionLoading) return;
-    if (!userId) {
-      setIsLoading(false);
-      return;
-    }
-
-    async function fetchProfiles() {
-      try {
-        const res = await fetch(`/api/profiles?userId=${userId}`);
-        const data = await res.json();
-        setProfiles(data.profiles || []);
-      } catch (error) {
-        console.error("Error fetching profiles:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    fetchProfiles();
-  }, [userId, sessionLoading]);
-
-  if (sessionLoading || isLoading) {
-    return <LoadingFallback />;
-  }
+async function DiscoverLoader() {
+  const userId = await getSessionUserId();
 
   if (!userId) {
     return <NoUserFallback />;
   }
 
-  return <DiscoverContent profiles={profiles} userId={userId} />;
+  // Get IDs of profiles already swiped by this user
+  const swipedProfiles = await db
+    .select({ swipedId: swipes.swipedId })
+    .from(swipes)
+    .where(eq(swipes.swiperId, userId));
+
+  const swipedIds = swipedProfiles.map((s) => s.swipedId);
+
+  // Get profiles that:
+  // 1. Are not the current user
+  // 2. Have completed onboarding
+  // 3. Are active
+  // 4. Haven't been swiped yet
+  const availableProfiles = await db
+    .select()
+    .from(profiles)
+    .where(
+      and(
+        ne(profiles.id, userId),
+        eq(profiles.onboardingCompleted, true),
+        eq(profiles.isActive, true),
+        swipedIds.length > 0 ? notInArray(profiles.id, swipedIds) : undefined
+      )
+    )
+    .limit(20);
+
+  return <DiscoverContent profiles={availableProfiles} userId={userId} />;
+}
+
+export default function DiscoverPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <DiscoverLoader />
+    </Suspense>
+  );
 }

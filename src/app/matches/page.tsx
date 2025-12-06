@@ -1,10 +1,11 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import { Suspense } from "react";
 import { Loader2, Users, Linkedin, Mail, ArrowLeft } from "lucide-react";
+import { eq, or } from "drizzle-orm";
 import Link from "next/link";
 
-import { useSession } from "@/hooks/use-session";
+import { getSessionUserId } from "@/lib/session";
+import { db } from "@/db/client";
+import { matches, profiles } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -31,20 +32,6 @@ function NoUserFallback() {
   );
 }
 
-interface MatchProfile {
-  id: string;
-  name: string;
-  headline: string | null;
-  linkedinUrl: string | null;
-  email: string;
-}
-
-interface MatchWithProfile {
-  matchId: string;
-  matchedAt: string;
-  profile: MatchProfile | undefined;
-}
-
 function EmptyMatches() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
@@ -60,7 +47,19 @@ function EmptyMatches() {
   );
 }
 
-function MatchesList({ matches }: { matches: MatchWithProfile[] }) {
+interface MatchWithProfile {
+  matchId: string;
+  matchedAt: Date;
+  profile: {
+    id: string;
+    name: string;
+    headline: string | null;
+    linkedinUrl: string | null;
+    email: string;
+  } | undefined;
+}
+
+function MatchesList({ matchesData }: { matchesData: MatchWithProfile[] }) {
   return (
     <div className="py-8">
       <div className="flex items-center gap-4 mb-8">
@@ -73,7 +72,7 @@ function MatchesList({ matches }: { matches: MatchWithProfile[] }) {
       </div>
 
       <div className="grid gap-4">
-        {matches.map(({ matchId, matchedAt, profile }) => {
+        {matchesData.map(({ matchId, matchedAt, profile }) => {
           if (!profile) return null;
 
           return (
@@ -124,44 +123,57 @@ function MatchesList({ matches }: { matches: MatchWithProfile[] }) {
   );
 }
 
-export default function MatchesPage() {
-  const { userId, isLoading: sessionLoading } = useSession();
-  const [matches, setMatches] = useState<MatchWithProfile[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    if (sessionLoading) return;
-    if (!userId) {
-      setIsLoading(false);
-      return;
-    }
-
-    async function fetchMatches() {
-      try {
-        const res = await fetch(`/api/matches?userId=${userId}`);
-        const data = await res.json();
-        setMatches(data.matches || []);
-      } catch (error) {
-        console.error("Error fetching matches:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    fetchMatches();
-  }, [userId, sessionLoading]);
-
-  if (sessionLoading || isLoading) {
-    return <LoadingFallback />;
-  }
+async function MatchesLoader() {
+  const userId = await getSessionUserId();
 
   if (!userId) {
     return <NoUserFallback />;
   }
 
-  if (matches.length === 0) {
+  // Get all matches where this user is either userA or userB
+  const userMatches = await db
+    .select({
+      matchId: matches.id,
+      matchedAt: matches.createdAt,
+      userAId: matches.userA,
+      userBId: matches.userB,
+    })
+    .from(matches)
+    .where(or(eq(matches.userA, userId), eq(matches.userB, userId)));
+
+  if (userMatches.length === 0) {
     return <EmptyMatches />;
   }
 
-  return <MatchesList matches={matches} />;
+  // Get the matched profile IDs (the other person in each match)
+  const matchedProfileIds = userMatches.map((m) =>
+    m.userAId === userId ? m.userBId : m.userAId
+  );
+
+  // Fetch all matched profiles
+  const matchedProfiles = await db
+    .select()
+    .from(profiles)
+    .where(or(...matchedProfileIds.map((id) => eq(profiles.id, id))));
+
+  // Combine match data with profile data
+  const matchesWithProfiles: MatchWithProfile[] = userMatches.map((m) => {
+    const matchedId = m.userAId === userId ? m.userBId : m.userAId;
+    const profile = matchedProfiles.find((p) => p.id === matchedId);
+    return {
+      matchId: m.matchId,
+      matchedAt: m.matchedAt,
+      profile,
+    };
+  });
+
+  return <MatchesList matchesData={matchesWithProfiles} />;
+}
+
+export default function MatchesPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <MatchesLoader />
+    </Suspense>
+  );
 }

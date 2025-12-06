@@ -5,20 +5,23 @@ import { useRouter } from "next/navigation";
 
 import { PdfUpload } from "@/components/pdf-upload";
 import { OnboardingQuestions } from "@/components/onboarding-questions";
-import { useSession } from "@/hooks/use-session";
 import type { Profile } from "@/db/schema";
 
 type Step = "upload" | "questions";
 
 export function OnboardingFlow() {
   const router = useRouter();
-  const { setUserId } = useSession();
   const [step, setStep] = useState<Step>("upload");
   const [profile, setProfile] = useState<Profile | null>(null);
 
-  const handleUploadSuccess = (uploadedProfile: Profile) => {
+  const handleUploadSuccess = async (uploadedProfile: Profile) => {
+    // Set session cookie via API
+    await fetch("/api/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: uploadedProfile.id }),
+    });
     setProfile(uploadedProfile);
-    setUserId(uploadedProfile.id);
     setStep("questions");
   };
 
