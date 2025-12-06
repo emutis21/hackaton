@@ -1,8 +1,10 @@
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 
 const SESSION_KEY = "hackaton_user_id";
 
 export async function getSessionUserId(): Promise<string | null> {
+  await connection();
   const cookieStore = await cookies();
   return cookieStore.get(SESSION_KEY)?.value ?? null;
 }

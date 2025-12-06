@@ -112,6 +112,29 @@ function LogoutButton() {
   );
 }
 
+export function SidebarSkeleton() {
+  return (
+    <aside className="w-64 border-r bg-card flex flex-col h-screen sticky top-0">
+      <div className="p-4 border-b">
+        <span className="text-xl font-bold">hackaton</span>
+      </div>
+      <div className="p-4 border-b">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-muted animate-pulse" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 bg-muted rounded animate-pulse w-24" />
+            <div className="h-3 bg-muted rounded animate-pulse w-32" />
+          </div>
+        </div>
+      </div>
+      <nav className="flex-1 p-2">
+        <div className="h-10 bg-muted rounded-lg animate-pulse mb-1" />
+        <div className="h-10 bg-muted rounded-lg animate-pulse" />
+      </nav>
+    </aside>
+  );
+}
+
 export async function Sidebar() {
   return (
     <aside className="w-64 border-r bg-card flex flex-col h-screen sticky top-0">
